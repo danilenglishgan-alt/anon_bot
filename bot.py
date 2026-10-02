@@ -1,7 +1,9 @@
 import asyncio
 import logging
 import os
+import html
 import sqlite3
+from datetime import datetime, timezone
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.client.default import DefaultBotProperties
@@ -21,6 +23,18 @@ db.executescript(
         message_id INTEGER PRIMARY KEY,
         sender_id INTEGER NOT NULL
     );
+    -- журнал всех входящих сообщений (для жалоб и обращений в правоохранительные органы)
+    CREATE TABLE IF NOT EXISTS log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ts TEXT NOT NULL,
+        owner_message_id INTEGER,
+        sender_id INTEGER NOT NULL,
+        username TEXT,
+        full_name TEXT,
+        content_type TEXT NOT NULL,
+        text TEXT,
+        file_id TEXT
+    );
     CREATE TABLE IF NOT EXISTS blocks (
         sender_id INTEGER PRIMARY KEY
     );
@@ -36,11 +50,23 @@ WELCOME = (
     "⚡️ <b>Напишите сюда всё, что хотите ему передать,</b> и через несколько секунд "
     "он получит ваше сообщение, но не будет знать от кого.\n\n"
     "<blockquote>Отправить можно: текст, фото, видео, стикеры, "
-    "голосовые и видеосообщения (кружки)</blockquote>"
+    "голосовые и видеосообщения (кружки)</blockquote>\n\n"
+    "<i>Сообщения сохраняются. При нарушении закона данные могут быть "
+    "переданы правоохранительным органам.</i>"
 )
 SENT = "✅ <b>Сообщение отправлено, ожидайте ответ!</b>"
 
 owner = F.from_user.id == OWNER_ID
+
+
+def file_id_of(m: Message) -> str | None:
+    if m.photo:
+        return m.photo[-1].file_id
+    for attr in ("video", "voice", "video_note", "audio", "document", "sticker", "animation"):
+        obj = getattr(m, attr, None)
+        if obj:
+            return obj.file_id
+    return None
 
 
 @dp.message(owner, CommandStart())
@@ -50,7 +76,9 @@ async def owner_start(message: Message):
         "👋 Бот работает. Все анонимные сообщения будут приходить сюда.\n\n"
         f"Твоя ссылка для публикации:\nhttps://t.me/{username}\n\n"
         "Чтобы ответить автору — сделай «Ответить» на его сообщение.\n"
-        "Чтобы заблокировать автора — ответь на его сообщение командой /block."
+        "Чтобы заблокировать автора — ответь на его сообщение командой /block.\n"
+        "Чтобы узнать данные автора (для жалоб) — ответь командой /who.\n"
+        "Полный журнал: таблица log в базе data/anon.db."
     )
 
 
@@ -66,6 +94,26 @@ async def owner_block(message: Message):
     db.execute("INSERT OR IGNORE INTO blocks VALUES (?)", (row[0],))
     db.commit()
     await message.answer("🚫 Автор заблокирован.")
+
+
+@dp.message(owner, Command("who"))
+async def owner_who(message: Message):
+    """Ответом на сообщение — показать данные отправителя из журнала."""
+    reply = message.reply_to_message
+    row = reply and db.execute(
+        "SELECT ts, sender_id, username, full_name, content_type FROM log "
+        "WHERE owner_message_id=? ORDER BY id DESC LIMIT 1",
+        (reply.message_id,),
+    ).fetchone()
+    if not row:
+        await message.answer("Ответь этой командой на анонимное сообщение.")
+        return
+    ts, sid, username, name, ctype = row
+    await message.answer(
+        f"🔎 <b>Отправитель</b>\nID: <code>{sid}</code>\n"
+        f"Имя: {html.escape(name or '—')}\nUsername: {'@' + html.escape(username) if username else '—'}\n"
+        f"Тип: {ctype}\nВремя (UTC): {ts}",
+    )
 
 
 @dp.message(owner)
@@ -97,6 +145,16 @@ async def sender_message(message: Message):
         db.executemany(
             "INSERT OR REPLACE INTO routes VALUES (?, ?)",
             [(header.message_id, uid), (copied.message_id, uid)],
+        )
+        u = message.from_user
+        db.execute(
+            "INSERT INTO log (ts, owner_message_id, sender_id, username, full_name, "
+            "content_type, text, file_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+                copied.message_id, uid, u.username, u.full_name,
+                message.content_type, message.text or message.caption, file_id_of(message),
+            ),
         )
         db.commit()
     # заблокированный автор не должен об этом знать

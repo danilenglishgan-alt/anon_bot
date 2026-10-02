@@ -15,3 +15,9 @@
 ## Локальный запуск
     pip install -r requirements.txt
     export BOT_TOKEN=... OWNER_ID=... && python bot.py
+
+## Журнал сообщений
+Все входящие сообщения пишутся в таблицу `log` (время UTC, ID, имя, username, тип, текст/подпись, file_id медиа).
+- В боте: ответь командой `/who` на анонимное сообщение — покажет данные отправителя.
+- На сервере: `sqlite3 data/anon.db "SELECT ts, sender_id, username, content_type, text FROM log ORDER BY id DESC LIMIT 20;"`
+- Бэкап: копируй `data/anon.db`. Доступ к серверу и базе — только у владельца.
