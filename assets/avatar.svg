@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640" width="640" height="640">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2AABEE"/>
+      <stop offset="1" stop-color="#0A7FD8"/>
+    </linearGradient>
+  </defs>
+  <rect width="640" height="640" fill="url(#bg)"/>
+  <!-- задний пузырь -->
+  <g fill="#ffffff" opacity="0.88">
+    <rect x="235" y="255" width="310" height="230" rx="56"/>
+    <polygon points="470,470 520,470 535,545 450,480"/>
+  </g>
+  <!-- передний пузырь -->
+  <g fill="#ffffff">
+    <rect x="95" y="150" width="380" height="270" rx="64"/>
+    <polygon points="135,185 150,92 255,168"/>
+  </g>
+  <!-- маска -->
+  <path fill="#1C93E3" d="M155 238 Q285 212 415 238 Q430 300 365 322 Q318 332 285 300 Q252 332 205 322 Q140 300 155 238 Z"/>
+  <ellipse cx="228" cy="275" rx="38" ry="17" transform="rotate(10 228 275)" fill="#fff"/>
+  <ellipse cx="342" cy="275" rx="38" ry="17" transform="rotate(-10 342 275)" fill="#fff"/>
+  <!-- три точки -->
+  <g fill="#1C93E3">
+    <circle cx="225" cy="372" r="19"/>
+    <circle cx="285" cy="372" r="19"/>
+    <circle cx="345" cy="372" r="19"/>
+  </g>
+</svg>
