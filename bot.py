@@ -99,8 +99,9 @@ async def owner_who(message: Message):
     """Ответом на сообщение — показать данные отправителя из журнала."""
     reply = message.reply_to_message
     row = reply and db.execute(
-        "SELECT ts, sender_id, username, full_name, content_type FROM log "
-        "WHERE owner_message_id=? ORDER BY id DESC LIMIT 1",
+        "SELECT l.ts, l.sender_id, l.username, l.full_name, l.content_type FROM routes r "
+        "JOIN log l ON l.sender_id = r.sender_id AND l.owner_message_id >= r.message_id "
+        "WHERE r.message_id=? ORDER BY l.owner_message_id LIMIT 1",
         (reply.message_id,),
     ).fetchone()
     if not row:
@@ -134,23 +135,43 @@ async def sender_start(message: Message):
     await message.answer(WELCOME)
 
 
+HEADER = "📨 <b>Новое анонимное сообщение:</b>"
+CAPTION_TYPES = {"photo", "video", "audio", "document", "voice", "animation"}
+
+
+async def deliver(message: Message) -> list[int]:
+    """Доставить сообщение владельцу одним сообщением вместе с заголовком.
+    Возвращает id сообщений в чате владельца (для ответов)."""
+    if message.text and len(message.text) < 3900:
+        sent = await bot.send_message(OWNER_ID, f"{HEADER}\n\n{html.escape(message.text)}")
+        return [sent.message_id]
+    if message.content_type in CAPTION_TYPES and len(message.caption or "") < 900:
+        caption = HEADER + ("\n\n" + html.escape(message.caption) if message.caption else "")
+        copied = await message.copy_to(OWNER_ID, caption=caption, parse_mode=ParseMode.HTML)
+        return [copied.message_id]
+    # стикеры, кружки и т.п. не поддерживают подпись — заголовок отдельным сообщением
+    header = await bot.send_message(OWNER_ID, HEADER)
+    copied = await message.copy_to(OWNER_ID)
+    return [header.message_id, copied.message_id]
+
+
 @dp.message()
 async def sender_message(message: Message):
     uid = message.from_user.id
     if not db.execute("SELECT 1 FROM blocks WHERE sender_id=?", (uid,)).fetchone():
-        header = await bot.send_message(OWNER_ID, "📨 <b>Новое анонимное сообщение:</b>")
-        copied = await message.copy_to(OWNER_ID)
+        delivered = await deliver(message)
         db.executemany(
             "INSERT OR REPLACE INTO routes VALUES (?, ?)",
-            [(header.message_id, uid), (copied.message_id, uid)],
+            [(mid, uid) for mid in delivered],
         )
+        copied_id = delivered[-1]
         u = message.from_user
         db.execute(
             "INSERT INTO log (ts, owner_message_id, sender_id, username, full_name, "
             "content_type, text, file_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
-                copied.message_id, uid, u.username, u.full_name,
+                copied_id, uid, u.username, u.full_name,
                 message.content_type, message.text or message.caption, file_id_of(message),
             ),
         )
